@@ -1,11 +1,20 @@
-// Moborr.io server — authoritative movement + snapshots
+// Moborr.io server — authoritative movement + snapshots with CORS enabled
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { pingInterval: 20000, pingTimeout: 60000 });
+
+// Allow cross-origin socket.io connections (set CLIENT_ORIGIN env to restrict)
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_ORIGIN || '*',
+    methods: ['GET', 'POST']
+  },
+  pingInterval: 20000,
+  pingTimeout: 60000
+});
 
 app.use(express.static('public'));
 
@@ -13,7 +22,7 @@ const PORT = process.env.PORT || 3000;
 
 // Simulation parameters
 const TICK_RATE = 20; // server snapshot rate (Hz)
-const MAX_INPUT_DT = 0.1; // seconds, clamp input dt to avoid extreme jumps
+const MAX_INPUT_DT = 0.1; // seconds, clamp input dt
 const SPEED = 180; // px/sec player speed
 const MAP_BOUNDS = { w: 800, h: 600, padding: 16 };
 
@@ -25,12 +34,10 @@ function randomSpawn() {
     y: Math.floor(50 + Math.random() * (MAP_BOUNDS.h - 100))
   };
 }
-
 function randomColor() {
   const hue = Math.floor(Math.random() * 360);
   return `hsl(${hue} 75% 50%)`;
 }
-
 function clamp(val, a, b) {
   return Math.max(a, Math.min(b, val));
 }
@@ -55,39 +62,34 @@ io.on('connection', (socket) => {
 
     // send initial state
     socket.emit('currentPlayers', Array.from(players.values()));
-    // announce new player
+    // announce new player to others
     socket.broadcast.emit('newPlayer', p);
     console.log('player joined', p.username);
   });
 
-  // input message: {seq, dt, input: {x, y}} where input x/y in [-1,1]
+  // input message: {seq, dt, input: {x, y}}
   socket.on('input', (msg) => {
     const player = players.get(socket.id);
     if (!player) return;
 
-    // basic rate limiting / validation
     const now = Date.now();
     player.lastHeard = now;
 
     const seq = Number(msg.seq) || 0;
     let dt = Number(msg.dt) || (1 / TICK_RATE);
-    dt = Math.min(dt, MAX_INPUT_DT); // clamp suspicious dt
+    dt = Math.min(dt, MAX_INPUT_DT);
 
     // Only process monotonic sequence numbers
     if (seq <= player.lastProcessedInput) return;
     player.lastProcessedInput = seq;
 
     const input = msg.input || { x: 0, y: 0 };
-    // normalize diagonal
     let ix = Number(input.x) || 0;
     let iy = Number(input.y) || 0;
     const len = Math.hypot(ix, iy);
-    if (len > 1e-6) {
-      ix /= len;
-      iy /= len;
-    }
+    if (len > 1e-6) { ix /= len; iy /= len; }
 
-    // Apply simple velocity integration (server authoritative)
+    // server-authoritative integration
     player.vx = ix * SPEED;
     player.vy = iy * SPEED;
     player.x += player.vx * dt;
@@ -124,4 +126,5 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log(`Moborr.io server listening on http://localhost:${PORT}`);
+  if (process.env.CLIENT_ORIGIN) console.log('CLIENT_ORIGIN =', process.env.CLIENT_ORIGIN);
 });
