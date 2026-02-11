@@ -21,13 +21,11 @@ app.use(express.static('public'));
 const PORT = process.env.PORT || 3000;
 
 // Simulation parameters
-// Keep server snapshot rate at 30Hz (good balance). Client sends inputs faster.
 const TICK_RATE = 30; // server snapshot rate (Hz)
 const MAX_INPUT_DT = 0.1; // seconds, clamp input dt
 
-// Movement speed — raised so the game feels snappier.
-// Must match the client SPEED constant.
-const SPEED = 260; // px/sec (was 180)
+// Movement speed — must match client
+const SPEED = 260; // px/sec
 
 // BIG map: 12000 x 12000
 const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
@@ -127,7 +125,10 @@ setInterval(() => {
     username: p.username,
     color: p.color
   }));
-  if (snapshot.length) io.emit('stateSnapshot', { now: Date.now(), players: snapshot });
+  if (snapshot.length) {
+    // mark snapshots as volatile so a slow client won't cause queued bursts of old snapshots
+    io.volatile.emit('stateSnapshot', { now: Date.now(), players: snapshot });
+  }
 }, 1000 / TICK_RATE);
 
 server.listen(PORT, () => {
