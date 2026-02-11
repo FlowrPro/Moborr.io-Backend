@@ -24,14 +24,15 @@ const PORT = process.env.PORT || 3000;
 const TICK_RATE = 20; // server snapshot rate (Hz)
 const MAX_INPUT_DT = 0.1; // seconds, clamp input dt
 const SPEED = 180; // px/sec player speed
-const MAP_BOUNDS = { w: 800, h: 600, padding: 16 };
+// BIG map: 12000 x 12000
+const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
 
 const players = new Map(); // socketId -> player
 
 function randomSpawn() {
   return {
-    x: Math.floor(50 + Math.random() * (MAP_BOUNDS.w - 100)),
-    y: Math.floor(50 + Math.random() * (MAP_BOUNDS.h - 100))
+    x: Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.w - MAP_BOUNDS.padding * 2) ),
+    y: Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) )
   };
 }
 function randomColor() {
@@ -64,7 +65,7 @@ io.on('connection', (socket) => {
     socket.emit('currentPlayers', Array.from(players.values()));
     // announce new player to others
     socket.broadcast.emit('newPlayer', p);
-    console.log('player joined', p.username);
+    console.log('player joined', p.username, 'spawn', spawn);
   });
 
   // input message: {seq, dt, input: {x, y}}
