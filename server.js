@@ -21,10 +21,14 @@ app.use(express.static('public'));
 const PORT = process.env.PORT || 3000;
 
 // Simulation parameters
-// Increased tick rate to reduce perceived jitter. 30Hz is a good balance for smoothness and CPU.
+// Keep server snapshot rate at 30Hz (good balance). Client sends inputs faster.
 const TICK_RATE = 30; // server snapshot rate (Hz)
 const MAX_INPUT_DT = 0.1; // seconds, clamp input dt
-const SPEED = 180; // px/sec player speed
+
+// Movement speed — raised so the game feels snappier.
+// Must match the client SPEED constant.
+const SPEED = 260; // px/sec (was 180)
+
 // BIG map: 12000 x 12000
 const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
 
