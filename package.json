@@ -1,7 +1,7 @@
 {
   "name": "moborr-io",
   "version": "0.1.0",
-  "description": "Moborr.io — multiplayer movement demo (WASD with prediction + reconciliation)",
+  "description": "Moborr.io — multiplayer movement (WASD with prediction + reconciliation)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
