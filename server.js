@@ -21,7 +21,8 @@ app.use(express.static('public'));
 const PORT = process.env.PORT || 3000;
 
 // Simulation parameters
-const TICK_RATE = 20; // server snapshot rate (Hz)
+// Increased tick rate to reduce perceived jitter. 30Hz is a good balance for smoothness and CPU.
+const TICK_RATE = 30; // server snapshot rate (Hz)
 const MAX_INPUT_DT = 0.1; // seconds, clamp input dt
 const SPEED = 180; // px/sec player speed
 // BIG map: 12000 x 12000
@@ -90,7 +91,7 @@ io.on('connection', (socket) => {
     const len = Math.hypot(ix, iy);
     if (len > 1e-6) { ix /= len; iy /= len; }
 
-    // server-authoritative integration
+    // server-authoritative integration (apply input immediately)
     player.vx = ix * SPEED;
     player.vy = iy * SPEED;
     player.x += player.vx * dt;
