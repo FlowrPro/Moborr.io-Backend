@@ -218,39 +218,15 @@ function checkWallCollisionOptimized(x, y, radius) {
 const players = new Map(); // socketId -> player
 const PLAYER_RADIUS = 26;
 
-function findTopLeftSpawn() {
-  // Top-left corner spawn area, but pushed more diagonally down-right
-  // to avoid the walls at the top-left corner
-  
-  const spawnSearchArea = {
-    minX: 750,
-    maxX: 1200,
-    minY: 750,
-    maxY: 1200
-  };
-  
-  // Grid search for safe position
-  const gridStep = 50; // check every 50px
-  
-  for (let y = spawnSearchArea.minY; y <= spawnSearchArea.maxY; y += gridStep) {
-    for (let x = spawnSearchArea.minX; x <= spawnSearchArea.maxX; x += gridStep) {
-      if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS + 50)) {
-        // Add some randomness within a small radius so players don't stack exactly
-        const offsetX = (Math.random() - 0.5) * 80;
-        const offsetY = (Math.random() - 0.5) * 80;
-        const finalX = x + offsetX;
-        const finalY = y + offsetY;
-        
-        // Final validation
-        if (!checkWallCollisionOptimized(finalX, finalY, PLAYER_RADIUS)) {
-          return { x: finalX, y: finalY };
-        }
-      }
-    }
+function randomSpawn() {
+  let x, y;
+  // Keep trying to find a spawn point that doesn't collide with walls
+  for (let attempts = 0; attempts < 20; attempts++) {
+    x = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.w - MAP_BOUNDS.padding * 2) );
+    y = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) );
+    if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS)) break;
   }
-  
-  // Fallback if grid search fails (shouldn't happen with current wall layout)
-  return { x: 800, y: 800 };
+  return { x, y };
 }
 
 function randomColor() {
@@ -273,7 +249,7 @@ io.on('connection', (socket) => {
 
   socket.on('join', (username) => {
     try {
-      const spawn = findTopLeftSpawn();
+      const spawn = randomSpawn();
       const p = {
         id: socket.id,
         username: String(username).slice(0, 20) || 'Player',
@@ -283,7 +259,10 @@ io.on('connection', (socket) => {
         vy: 0,
         color: randomColor(),
         lastProcessedInput: 0,
-        lastHeard: Date.now()
+        lastHeard: Date.now(),
+        // Inventory system
+        inventory: [],
+        hotbar: new Array(8).fill(null)
       };
       players.set(socket.id, p);
 
@@ -291,6 +270,13 @@ io.on('connection', (socket) => {
       socket.emit('currentPlayers', Array.from(players.values()));
       // announce new player to others
       socket.broadcast.emit('newPlayer', p);
+      
+      // Send player their inventory
+      socket.emit('playerInventory', {
+        inventory: p.inventory,
+        hotbar: p.hotbar
+      });
+      
       console.log('player joined', p.username, 'spawn', spawn);
     } catch (err) {
       console.error('Error in join event', err);
@@ -338,6 +324,42 @@ io.on('connection', (socket) => {
       player.y = clamp(player.y, MAP_BOUNDS.padding, MAP_BOUNDS.h - MAP_BOUNDS.padding);
     } catch (err) {
       console.error('Error processing input', err);
+    }
+  });
+
+  // Equip petal to hotbar
+  socket.on('equipPetal', (data) => {
+    try {
+      const player = players.get(socket.id);
+      if (!player) return;
+
+      const { inventoryIndex, hotbarSlot } = data;
+      if (inventoryIndex < 0 || inventoryIndex >= player.inventory.length) return;
+      if (hotbarSlot < 0 || hotbarSlot >= 8) return;
+
+      player.hotbar[hotbarSlot] = player.inventory[inventoryIndex];
+      console.log(`Player ${player.username} equipped petal to slot ${hotbarSlot}`);
+    } catch (err) {
+      console.error('Error equipping petal', err);
+    }
+  });
+
+  // Use petal from hotbar
+  socket.on('usePetal', (data) => {
+    try {
+      const player = players.get(socket.id);
+      if (!player) return;
+
+      const { hotbarSlot } = data;
+      if (hotbarSlot < 0 || hotbarSlot >= 8) return;
+
+      const petal = player.hotbar[hotbarSlot];
+      if (!petal) return;
+
+      console.log(`Player ${player.username} used petal: ${petal.name}`);
+      // TODO: Execute petal effects, validate on server, etc.
+    } catch (err) {
+      console.error('Error using petal', err);
     }
   });
 
