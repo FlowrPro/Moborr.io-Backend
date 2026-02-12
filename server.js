@@ -1,4 +1,4 @@
-// Moborr.io server — authoritative movement with polygon-based maze walls
+// Moborr.io server — authoritative movement + snapshots with CORS enabled
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
+// Allow cross-origin socket.io connections (set CLIENT_ORIGIN env to restrict)
 const io = new Server(server, {
   cors: {
     origin: process.env.CLIENT_ORIGIN || '*',
@@ -20,139 +21,176 @@ app.use(express.static('public'));
 const PORT = process.env.PORT || 3000;
 
 // Simulation parameters
-const TICK_RATE = 30;
-const MAX_INPUT_DT = 0.1;
-const SPEED = 260;
+const TICK_RATE = 30; // server snapshot rate (Hz)
+const MAX_INPUT_DT = 0.1; // seconds, clamp input dt
 
-// Map with maze walls (12x12 grid)
-const MAP_SIZE = 18000; // total size
-const MAP_HALF = MAP_SIZE / 2;
-const MAP_BOUNDS = { w: MAP_SIZE, h: MAP_SIZE, padding: 300 };
+// Movement speed — must match client
+const SPEED = 260; // px/sec
 
-// Grid maze generation
-const CELL = MAP_SIZE / 12;
-const WALL_THICKNESS = 672;
-const GAP = Math.floor(Math.max(24, CELL * 0.05));
+// BIG map: 12000 x 12000
+const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
 
-function normalize(vx, vy) {
-  const len = Math.hypot(vx, vy) || 1;
-  return { x: vx / len, y: vy / len };
-}
+// Wall generation parameters (matching reference game structure)
+const WALL_THICKNESS = 480;
+const SPAWN_MARGIN = 350;
+const CELL_SIZE = MAP_BOUNDS.w / 12;
+const CELL_GAP = Math.max(20, CELL_SIZE * 0.05);
 
-function gridToWorldCenter(col, row) {
-  const x = -MAP_HALF + (col - 0.5) * CELL;
-  const y = -MAP_HALF + (row - 0.5) * CELL;
-  return { x, y };
-}
+const players = new Map(); // socketId -> player
+let walls = []; // array of wall rectangles { x, y, w, h }
 
-// Centerline path following the maze
-const centerlineGrid = [
-  [2,1],[2,3],[4,3],[4,1],[6,1],[6,3],[8,3],[8,1],[10,1],
-  [10,3],[10,5],[8,5],[8,7],[6,7],[6,5],[4,5],[4,7],[2,7],
-  [2,9],[4,9],[4,11],[6,11],[6,9],[8,9],[8,11],[10,11]
-];
-
-const centerline = centerlineGrid.map(([c, r]) => gridToWorldCenter(c, r));
-
-// Convert polyline to thick polygon
-function polylineToThickPolygon(points, thickness) {
-  if (!points || points.length < 2) return [];
-  const half = thickness / 2;
-  const left = [];
-  const right = [];
-  const normals = [];
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i], b = points[i + 1];
-    const dir = normalize(b.x - a.x, b.y - a.y);
-    normals.push({ x: -dir.y, y: dir.x });
-  }
-
-  for (let i = 0; i < points.length; i++) {
-    let n = { x: 0, y: 0 };
-    if (i === 0) n = normals[0] || { x: 0, y: 1 };
-    else if (i === points.length - 1) n = normals[normals.length - 1] || { x: 0, y: 1 };
-    else {
-      n.x = (normals[i - 1] ? normals[i - 1].x : 0) + (normals[i] ? normals[i].x : 0);
-      n.y = (normals[i - 1] ? normals[i - 1].y : 0) + (normals[i] ? normals[i].y : 0);
-      const nl = Math.hypot(n.x, n.y);
-      if (nl < 1e-4) n = normals[i] || { x: 0, y: 1 };
-      else { n.x /= nl; n.y /= nl; }
-    }
-    left.push({ x: points[i].x + n.x * half, y: points[i].y + n.y * half });
-    right.push({ x: points[i].x - n.x * half, y: points[i].y - n.y * half });
-  }
-
-  return left.concat(right.reverse());
-}
-
-// Generate maze walls
-function generateMazeWalls() {
-  const walls = [];
+// ============ WALL GENERATION ============
+function generateWalls() {
+  walls = [];
   
-  // Main centerline passage
-  const passageWall = polylineToThickPolygon(centerline, WALL_THICKNESS);
-  walls.push({ id: 'passage', points: passageWall });
-
-  // Grid walls (outer perimeter and grid lines)
-  for (let col = 0; col <= 12; col++) {
-    for (let row = 0; row <= 12; row++) {
-      const cellKey = `${col}-${row}`;
-      const isCenterlineCell = centerlineGrid.some(([c, r]) => c === col && r === row);
+  // Define maze centerline as grid coordinates (cell indices)
+  const centerlineGrid = [
+    [2,1],[2,3],[4,3],[4,1],[6,1],[6,3],[8,3],[8,1],[10,1],
+    [10,3],[10,5],[8,5],[8,7],[6,7],[6,5],[4,5],[4,7],[2,7],
+    [2,9],[4,9],[4,11],[6,11],[6,9],[8,9],[8,11],[10,11]
+  ];
+  
+  // Convert grid coordinates to world positions
+  const centerline = centerlineGrid.map(([col, row]) => {
+    const x = -MAP_BOUNDS.w / 2 + (col - 0.5) * CELL_SIZE;
+    const y = -MAP_BOUNDS.h / 2 + (row - 0.5) * CELL_SIZE;
+    return { x, y };
+  });
+  
+  // For each cell in the 12x12 grid, determine if it's a wall or path
+  const grid = Array(12).fill(null).map(() => Array(12).fill(true)); // true = wall
+  
+  // Mark centerline cells as paths (false = no wall)
+  for (const [col, row] of centerlineGrid) {
+    grid[row][col] = false;
+  }
+  
+  // Generate thick wall rectangles around walls
+  for (let row = 0; row < 12; row++) {
+    for (let col = 0; col < 12; col++) {
+      if (!grid[row][col]) continue; // skip paths
       
-      if (isCenterlineCell) continue; // Skip cells on the main path
+      const wx = -MAP_BOUNDS.w / 2 + col * CELL_SIZE;
+      const wy = -MAP_BOUNDS.h / 2 + row * CELL_SIZE;
+      
+      walls.push({
+        x: wx,
+        y: wy,
+        w: CELL_SIZE,
+        h: CELL_SIZE
+      });
+    }
+  }
+  
+  console.log(`Generated ${walls.length} wall cells`);
+}
 
-      // Add outer walls of the cell
-      const x = -MAP_HALF + col * CELL;
-      const y = -MAP_HALF + row * CELL;
+// ============ COLLISION DETECTION ============
+function pointInRect(px, py, rect) {
+  return px >= rect.x && px <= rect.x + rect.w &&
+         py >= rect.y && py <= rect.y + rect.h;
+}
 
-      if (col === 0 || col === 12) {
-        // Outer perimeter
-        walls.push({
-          id: `wall-perimeter-${cellKey}`,
-          x: x,
-          y: y,
-          w: CELL,
-          h: CELL
-        });
-      } else if (row === 0 || row === 12) {
-        // Outer perimeter
-        walls.push({
-          id: `wall-perimeter-${cellKey}`,
-          x: x,
-          y: y,
-          w: CELL,
-          h: CELL
-        });
+function resolveCircleRect(entity, rect) {
+  const radius = entity.radius || 15;
+  
+  // Find closest point on rect to circle center
+  const closestX = Math.max(rect.x, Math.min(entity.x, rect.x + rect.w));
+  const closestY = Math.max(rect.y, Math.min(entity.y, rect.y + rect.h));
+  
+  const dx = entity.x - closestX;
+  const dy = entity.y - closestY;
+  const dist = Math.hypot(dx, dy);
+  
+  // No collision
+  if (dist >= radius) return;
+  
+  // Collision detected - push entity out
+  if (dist > 0) {
+    const overlap = radius - dist + 0.5; // small buffer
+    const nx = dx / dist;
+    const ny = dy / dist;
+    
+    entity.x += nx * overlap;
+    entity.y += ny * overlap;
+    
+    // Damp velocity component along collision normal
+    const vn = entity.vx * nx + entity.vy * ny;
+    if (vn > 0) {
+      entity.vx -= vn * nx * 0.8;
+      entity.vy -= vn * ny * 0.8;
+    }
+  } else {
+    // Circle center is inside rect - push out in largest direction
+    const toRectCenterX = (rect.x + rect.w / 2) - entity.x;
+    const toRectCenterY = (rect.y + rect.h / 2) - entity.y;
+    
+    let nx = 1, ny = 0;
+    
+    // Find closest edge
+    const distToLeft = Math.abs(entity.x - rect.x);
+    const distToRight = Math.abs(entity.x - (rect.x + rect.w));
+    const distToTop = Math.abs(entity.y - rect.y);
+    const distToBottom = Math.abs(entity.y - (rect.y + rect.h));
+    
+    const minDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
+    
+    if (minDist === distToLeft) { nx = -1; ny = 0; }
+    else if (minDist === distToRight) { nx = 1; ny = 0; }
+    else if (minDist === distToTop) { nx = 0; ny = -1; }
+    else { nx = 0; ny = 1; }
+    
+    entity.x += nx * (radius + 0.5);
+    entity.y += ny * (radius + 0.5);
+    entity.vx = 0;
+    entity.vy = 0;
+  }
+}
+
+// ============ MAP BOUNDS + WALL COLLISION ============
+function clamp(val, a, b) {
+  return Math.max(a, Math.min(b, val));
+}
+
+function constrainEntity(entity) {
+  const radius = entity.radius || 15;
+  
+  // Clamp to map bounds
+  entity.x = clamp(entity.x, MAP_BOUNDS.padding + radius, MAP_BOUNDS.w - MAP_BOUNDS.padding - radius);
+  entity.y = clamp(entity.y, MAP_BOUNDS.padding + radius, MAP_BOUNDS.h - MAP_BOUNDS.padding - radius);
+  
+  // Resolve wall collisions
+  for (const wall of walls) {
+    resolveCircleRect(entity, wall);
+  }
+}
+
+// ============ NETWORKING ============
+function randomSpawn() {
+  let x, y, valid = false;
+  
+  // Keep trying to spawn in a non-wall location
+  while (!valid) {
+    x = Math.floor(SPAWN_MARGIN + Math.random() * (MAP_BOUNDS.w - SPAWN_MARGIN * 2));
+    y = Math.floor(SPAWN_MARGIN + Math.random() * (MAP_BOUNDS.h - SPAWN_MARGIN * 2));
+    
+    // Check if spawn position is not inside a wall
+    valid = true;
+    for (const wall of walls) {
+      if (pointInRect(x, y, wall)) {
+        valid = false;
+        break;
       }
     }
   }
-
-  return walls;
-}
-
-const MAZE_WALLS = generateMazeWalls();
-
-function randomSpawn() {
-  // Spawn players near the start of the maze (around cell 2,1)
-  const spawnCell = gridToWorldCenter(2, 1);
-  const offset = CELL * 0.3;
-  return {
-    x: spawnCell.x + (Math.random() - 0.5) * offset,
-    y: spawnCell.y + (Math.random() - 0.5) * offset
-  };
+  
+  return { x, y };
 }
 
 function randomColor() {
   const hue = Math.floor(Math.random() * 360);
   return `hsl(${hue} 75% 50%)`;
 }
-
-function clamp(val, a, b) {
-  return Math.max(a, Math.min(b, val));
-}
-
-const players = new Map();
 
 io.on('connection', (socket) => {
   console.log('connect', socket.id);
@@ -166,20 +204,26 @@ io.on('connection', (socket) => {
       y: spawn.y,
       vx: 0,
       vy: 0,
+      vy: 0,
+      radius: 15,
       color: randomColor(),
       lastProcessedInput: 0,
       lastHeard: Date.now()
     };
     players.set(socket.id, p);
 
-    // Send initial state with maze walls
-    socket.emit('currentPlayers', Array.from(players.values()));
-    socket.emit('mazeWalls', MAZE_WALLS);
-    
+    // send initial state (including walls)
+    socket.emit('currentPlayers', {
+      players: Array.from(players.values()),
+      walls: walls,
+      mapBounds: MAP_BOUNDS
+    });
+    // announce new player to others
     socket.broadcast.emit('newPlayer', p);
-    console.log('player joined', p.username, 'at', spawn);
+    console.log('player joined', p.username, 'spawn', spawn);
   });
 
+  // input message: {seq, dt, input: {x, y}}
   socket.on('input', (msg) => {
     const player = players.get(socket.id);
     if (!player) return;
@@ -191,6 +235,7 @@ io.on('connection', (socket) => {
     let dt = Number(msg.dt) || (1 / TICK_RATE);
     dt = Math.min(dt, MAX_INPUT_DT);
 
+    // Only process monotonic sequence numbers
     if (seq <= player.lastProcessedInput) return;
     player.lastProcessedInput = seq;
 
@@ -200,15 +245,14 @@ io.on('connection', (socket) => {
     const len = Math.hypot(ix, iy);
     if (len > 1e-6) { ix /= len; iy /= len; }
 
-    // Apply movement
+    // server-authoritative integration (apply input immediately)
     player.vx = ix * SPEED;
     player.vy = iy * SPEED;
     player.x += player.vx * dt;
     player.y += player.vy * dt;
 
-    // Clamp to map bounds
-    player.x = clamp(player.x, MAP_BOUNDS.padding, MAP_BOUNDS.w - MAP_BOUNDS.padding);
-    player.y = clamp(player.y, MAP_BOUNDS.padding, MAP_BOUNDS.h - MAP_BOUNDS.padding);
+    // Apply collision constraints
+    constrainEntity(player);
   });
 
   socket.on('disconnect', () => {
@@ -220,7 +264,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Broadcast snapshots
+// Broadcast authoritative snapshots at TICK_RATE
 setInterval(() => {
   const snapshot = Array.from(players.values()).map(p => ({
     id: p.id,
@@ -228,15 +272,25 @@ setInterval(() => {
     y: p.y,
     vx: p.vx,
     vy: p.vy,
+    radius: p.radius,
     lastProcessedInput: p.lastProcessedInput,
     username: p.username,
     color: p.color
   }));
   if (snapshot.length) {
-    io.volatile.emit('stateSnapshot', { now: Date.now(), players: snapshot });
+    // mark snapshots as volatile so a slow client won't cause queued bursts of old snapshots
+    io.volatile.emit('stateSnapshot', { 
+      now: Date.now(), 
+      players: snapshot,
+      walls: walls
+    });
   }
 }, 1000 / TICK_RATE);
 
 server.listen(PORT, () => {
   console.log(`Moborr.io server listening on http://localhost:${PORT}`);
+  if (process.env.CLIENT_ORIGIN) console.log('CLIENT_ORIGIN =', process.env.CLIENT_ORIGIN);
 });
+
+// Initialize walls on startup
+generateWalls();
