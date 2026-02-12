@@ -3,9 +3,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
-// Import petal system
-const { PETALS, RARITY_MULTIPLIERS, createPetal, usePetal } = require('./petals.js');
-
 const app = express();
 const server = http.createServer(app);
 
@@ -23,25 +20,116 @@ app.use(express.static('public'));
 
 const PORT = process.env.PORT || 3000;
 
+// ============ PETAL SYSTEM (Server-side) ============
+const RARITY_MULTIPLIERS = {
+  'Common': 1,
+  'Uncommon': 3,
+  'Rare': 9,
+  'Legendary': 27,
+  'Mythical': 81,
+  'Godly': 243
+};
+
+const PETAL_CATEGORIES = {
+  HEAL: 'heal',
+  CONSUMABLE: 'consumable',
+  DAMAGER: 'damager',
+  SHOOTABLE: 'shootable',
+  BUFF: 'buff'
+};
+
+// ALL PETALS - Add new petals here!
+const PETALS = {
+  // ============ HEAL CATEGORY ============
+  // Add HEAL petals here
+
+  // ============ CONSUMABLE CATEGORY ============
+  // Add CONSUMABLE petals here
+
+  // ============ DAMAGER CATEGORY ============
+  fireball: {
+    id: 'fireball',
+    name: 'Fireball',
+    category: PETAL_CATEGORIES.DAMAGER,
+    icon: '/assets/petals/fireball.webp',
+    description: 'A burning projectile that explodes on impact',
+    damage: 30,
+    health: 35
+  },
+  // Add more DAMAGER petals here
+
+  // ============ SHOOTABLE CATEGORY ============
+  // Add SHOOTABLE petals here
+
+  // ============ BUFF CATEGORY ============
+  // Add BUFF petals here
+};
+
+// Create a petal instance with rarity
+function createPetal(petalId, rarity = 'Common') {
+  const petalDef = PETALS[petalId];
+  if (!petalDef) {
+    console.error('Petal not found:', petalId);
+    return null;
+  }
+
+  if (!RARITY_MULTIPLIERS[rarity]) {
+    console.error('Invalid rarity:', rarity);
+    return null;
+  }
+
+  const multiplier = RARITY_MULTIPLIERS[rarity];
+
+  const petal = {
+    instanceId: Math.random().toString(36).substr(2, 9),
+    id: petalId,
+    name: petalDef.name,
+    category: petalDef.category,
+    rarity: rarity,
+    icon: petalDef.icon,
+    description: petalDef.description,
+    quantity: 1,
+    
+    healing: petalDef.healing ? petalDef.healing * multiplier : undefined,
+    damage: petalDef.damage ? petalDef.damage * multiplier : undefined,
+    health: petalDef.health ? petalDef.health * multiplier : undefined,
+    speedMultiplier: petalDef.speedMultiplier ? petalDef.speedMultiplier * multiplier : undefined,
+    defenseMultiplier: petalDef.defenseMultiplier,
+    fireRate: petalDef.fireRate,
+    duration: petalDef.duration,
+    
+    createdAt: Date.now(),
+    cooldown: 0
+  };
+
+  return petal;
+}
+
+function createStartingInventory() {
+  return [
+    createPetal('fireball', 'Common'),
+    createPetal('fireball', 'Uncommon'),
+    createPetal('fireball', 'Rare'),
+    createPetal('fireball', 'Legendary')
+  ];
+}
+
+// ============ END PETAL SYSTEM ============
+
 // Simulation parameters
-const TICK_RATE = 30; // server snapshot rate (Hz)
-const MAX_INPUT_DT = 0.1; // seconds, clamp input dt
-
-// Movement speed — must match client
-const SPEED = 260; // px/sec
-
-// BIG map: 12000 x 12000
+const TICK_RATE = 30;
+const MAX_INPUT_DT = 0.1;
+const SPEED = 260;
 const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
 
 // Wall system (must match client)
 const WALLS = [];
 
 function generateMazeWalls() {
-  const wallThickness = 600; // Very thick walls
+  const wallThickness = 600;
   const mapW = MAP_BOUNDS.w;
   const mapH = MAP_BOUNDS.h;
   
-  // Main perimeter-like wall on the left side, winding up
   WALLS.push({
     x: 0,
     y: 0,
@@ -49,7 +137,6 @@ function generateMazeWalls() {
     height: mapH * 0.4
   });
   
-  // Wall extends right from top-left
   WALLS.push({
     x: 0,
     y: 0,
@@ -57,7 +144,6 @@ function generateMazeWalls() {
     height: wallThickness
   });
   
-  // First major turn - goes down on the right side of top section
   WALLS.push({
     x: mapW * 0.3,
     y: wallThickness,
@@ -65,7 +151,6 @@ function generateMazeWalls() {
     height: mapH * 0.35
   });
   
-  // Horizontal wall in middle-left area - dead end
   WALLS.push({
     x: 0,
     y: mapH * 0.35,
@@ -73,7 +158,6 @@ function generateMazeWalls() {
     height: wallThickness
   });
   
-  // Major vertical wall in center - creates main corridor
   WALLS.push({
     x: mapW * 0.45,
     y: mapH * 0.2,
@@ -81,7 +165,6 @@ function generateMazeWalls() {
     height: mapH * 0.5
   });
   
-  // Winding wall on right side - goes up and down
   WALLS.push({
     x: mapW * 0.65,
     y: 0,
@@ -89,7 +172,6 @@ function generateMazeWalls() {
     height: mapH * 0.5
   });
   
-  // Right side bottom section - creates a tunnel effect
   WALLS.push({
     x: mapW * 0.7,
     y: mapH * 0.45,
@@ -97,7 +179,6 @@ function generateMazeWalls() {
     height: wallThickness
   });
   
-  // Bottom perimeter wall - long horizontal
   WALLS.push({
     x: 0,
     y: mapH * 0.8,
@@ -105,7 +186,6 @@ function generateMazeWalls() {
     height: wallThickness
   });
   
-  // Bottom right area - creates winding path
   WALLS.push({
     x: mapW * 0.55,
     y: mapH * 0.65,
@@ -113,7 +193,6 @@ function generateMazeWalls() {
     height: mapH * 0.35
   });
   
-  // Center area - creates maze-like dead ends
   WALLS.push({
     x: mapW * 0.2,
     y: mapH * 0.5,
@@ -121,7 +200,6 @@ function generateMazeWalls() {
     height: wallThickness
   });
   
-  // Left-center vertical tunnel
   WALLS.push({
     x: mapW * 0.1,
     y: mapH * 0.5,
@@ -129,7 +207,6 @@ function generateMazeWalls() {
     height: mapH * 0.3
   });
   
-  // Right-center section - more maze complexity
   WALLS.push({
     x: mapW * 0.75,
     y: mapH * 0.6,
@@ -137,7 +214,6 @@ function generateMazeWalls() {
     height: mapH * 0.2
   });
   
-  // Additional winding on bottom-left
   WALLS.push({
     x: mapW * 0.15,
     y: mapH * 0.7,
@@ -145,7 +221,6 @@ function generateMazeWalls() {
     height: mapH * 0.3
   });
   
-  // Top-right corner tunnel
   WALLS.push({
     x: mapW * 0.8,
     y: mapH * 0.15,
@@ -199,7 +274,7 @@ class SpatialGrid {
   }
 }
 
-const wallGrid = new SpatialGrid(1000); // 1000px cells
+const wallGrid = new SpatialGrid(1000);
 
 function checkWallCollisionOptimized(x, y, radius) {
   const nearbyWalls = wallGrid.getNearbyWalls(x, y, radius);
@@ -218,24 +293,10 @@ function checkWallCollisionOptimized(x, y, radius) {
   return false;
 }
 
-const players = new Map(); // socketId -> player
+const players = new Map();
 const PLAYER_RADIUS = 26;
 
-function randomSpawn() {
-  let x, y;
-  // Keep trying to find a spawn point that doesn't collide with walls
-  for (let attempts = 0; attempts < 20; attempts++) {
-    x = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.w - MAP_BOUNDS.padding * 2) );
-    y = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) );
-    if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS)) break;
-  }
-  return { x, y };
-}
-
 function findTopLeftSpawn() {
-  // Top-left corner spawn area, but pushed more diagonally down-right
-  // to avoid the walls at the top-left corner
-  
   const spawnSearchArea = {
     minX: 750,
     maxX: 1200,
@@ -243,19 +304,16 @@ function findTopLeftSpawn() {
     maxY: 1200
   };
   
-  // Grid search for safe position
-  const gridStep = 50; // check every 50px
+  const gridStep = 50;
   
   for (let y = spawnSearchArea.minY; y <= spawnSearchArea.maxY; y += gridStep) {
     for (let x = spawnSearchArea.minX; x <= spawnSearchArea.maxX; x += gridStep) {
       if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS + 50)) {
-        // Add some randomness within a small radius so players don't stack exactly
         const offsetX = (Math.random() - 0.5) * 80;
         const offsetY = (Math.random() - 0.5) * 80;
         const finalX = x + offsetX;
         const finalY = y + offsetY;
         
-        // Final validation
         if (!checkWallCollisionOptimized(finalX, finalY, PLAYER_RADIUS)) {
           return { x: finalX, y: finalY };
         }
@@ -263,7 +321,6 @@ function findTopLeftSpawn() {
     }
   }
   
-  // Fallback if grid search fails (shouldn't happen with current wall layout)
   return { x: 800, y: 800 };
 }
 
@@ -276,21 +333,10 @@ function clamp(val, a, b) {
   return Math.max(a, Math.min(b, val));
 }
 
-// Initialize starting inventory for a new player
-function createStartingInventory() {
-  return [
-    createPetal('fireball', 'Common'),
-    createPetal('fireball', 'Uncommon'),
-    createPetal('fireball', 'Rare'),
-    createPetal('fireball', 'Legendary')
-  ];
-}
-
-// Generate walls on server startup
 generateMazeWalls();
 wallGrid.build(WALLS);
 
-const STALE_PLAYER_TIMEOUT = 30000; // 30 seconds
+const STALE_PLAYER_TIMEOUT = 30000;
 
 io.on('connection', (socket) => {
   console.log('connect', socket.id);
@@ -308,13 +354,11 @@ io.on('connection', (socket) => {
         color: randomColor(),
         lastProcessedInput: 0,
         lastHeard: Date.now(),
-        // Inventory system
         inventory: createStartingInventory(),
         hotbar: new Array(8).fill(null)
       };
       players.set(socket.id, p);
 
-      // send initial state
       socket.emit('currentPlayers', Array.from(players.values()).map(pl => ({
         id: pl.id,
         username: pl.username,
@@ -325,7 +369,6 @@ io.on('connection', (socket) => {
         color: pl.color
       })));
       
-      // announce new player to others
       socket.broadcast.emit('newPlayer', {
         id: p.id,
         username: p.username,
@@ -336,7 +379,6 @@ io.on('connection', (socket) => {
         color: p.color
       });
       
-      // Send player their inventory
       socket.emit('playerInventory', {
         inventory: p.inventory,
         hotbar: p.hotbar
@@ -348,7 +390,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // input message: {seq, dt, input: {x, y}}
   socket.on('input', (msg) => {
     try {
       const player = players.get(socket.id);
@@ -361,7 +402,6 @@ io.on('connection', (socket) => {
       let dt = Number(msg.dt) || (1 / TICK_RATE);
       dt = Math.min(dt, MAX_INPUT_DT);
 
-      // Only process monotonic sequence numbers
       if (seq <= player.lastProcessedInput) return;
       player.lastProcessedInput = seq;
 
@@ -371,20 +411,17 @@ io.on('connection', (socket) => {
       const len = Math.hypot(ix, iy);
       if (len > 1e-6) { ix /= len; iy /= len; }
 
-      // server-authoritative integration (apply input immediately)
       player.vx = ix * SPEED;
       player.vy = iy * SPEED;
       
       const newX = player.x + player.vx * dt;
       const newY = player.y + player.vy * dt;
       
-      // Check collision with walls using spatial grid
       if (!checkWallCollisionOptimized(newX, newY, PLAYER_RADIUS)) {
         player.x = newX;
         player.y = newY;
       }
 
-      // clamp to map bounds
       player.x = clamp(player.x, MAP_BOUNDS.padding, MAP_BOUNDS.w - MAP_BOUNDS.padding);
       player.y = clamp(player.y, MAP_BOUNDS.padding, MAP_BOUNDS.h - MAP_BOUNDS.padding);
     } catch (err) {
@@ -392,7 +429,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Equip petal to hotbar
   socket.on('equipPetal', (data) => {
     try {
       const player = players.get(socket.id);
@@ -401,14 +437,11 @@ io.on('connection', (socket) => {
       const { petalInstanceId, hotbarSlot } = data;
       if (hotbarSlot < 0 || hotbarSlot >= 8) return;
 
-      // Find petal in inventory by instanceId
       const petal = player.inventory.find(p => p.instanceId === petalInstanceId);
       if (!petal) return;
 
-      // Equip to hotbar
       player.hotbar[hotbarSlot] = petal;
       
-      // Send updated inventory/hotbar to client
       socket.emit('playerInventory', {
         inventory: player.inventory,
         hotbar: player.hotbar
@@ -420,7 +453,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Use petal from hotbar
   socket.on('usePetal', (data) => {
     try {
       const player = players.get(socket.id);
@@ -433,7 +465,6 @@ io.on('connection', (socket) => {
       if (!petal) return;
 
       console.log(`Player ${player.username} used petal: ${petal.name}`);
-      // TODO: Execute petal effects on server, validate, broadcast results to other players
     } catch (err) {
       console.error('Error using petal', err);
     }
@@ -448,13 +479,11 @@ io.on('connection', (socket) => {
   });
 });
 
-// Broadcast authoritative snapshots at TICK_RATE
 setInterval(() => {
   try {
     const now = Date.now();
     const staleIds = [];
 
-    // Check for stale players and remove them
     for (const [id, p] of players) {
       if (now - p.lastHeard > STALE_PLAYER_TIMEOUT) {
         staleIds.push(id);
