@@ -151,8 +151,56 @@ function generateMazeWalls() {
   });
 }
 
-function checkWallCollision(x, y, radius) {
-  for (const wall of WALLS) {
+// Simple spatial grid for collision optimization
+class SpatialGrid {
+  constructor(cellSize) {
+    this.cellSize = cellSize;
+    this.grid = new Map();
+  }
+  
+  getNearbyWalls(x, y, radius) {
+    const nearbyWalls = new Set();
+    const searchRadius = Math.ceil(radius / this.cellSize) + 1;
+    const cx = Math.floor(x / this.cellSize);
+    const cy = Math.floor(y / this.cellSize);
+    
+    for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+      for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+        const key = `${cx + dx},${cy + dy}`;
+        const wallsInCell = this.grid.get(key);
+        if (wallsInCell) {
+          wallsInCell.forEach(w => nearbyWalls.add(w));
+        }
+      }
+    }
+    
+    return Array.from(nearbyWalls);
+  }
+  
+  build(walls) {
+    this.grid.clear();
+    for (const wall of walls) {
+      const minCellX = Math.floor(wall.x / this.cellSize);
+      const minCellY = Math.floor(wall.y / this.cellSize);
+      const maxCellX = Math.floor((wall.x + wall.width) / this.cellSize);
+      const maxCellY = Math.floor((wall.y + wall.height) / this.cellSize);
+      
+      for (let cx = minCellX; cx <= maxCellX; cx++) {
+        for (let cy = minCellY; cy <= maxCellY; cy++) {
+          const key = `${cx},${cy}`;
+          if (!this.grid.has(key)) this.grid.set(key, []);
+          this.grid.get(key).push(wall);
+        }
+      }
+    }
+  }
+}
+
+const wallGrid = new SpatialGrid(1000); // 1000px cells
+
+function checkWallCollisionOptimized(x, y, radius) {
+  const nearbyWalls = wallGrid.getNearbyWalls(x, y, radius);
+  for (const wall of nearbyWalls) {
     const closestX = Math.max(wall.x, Math.min(x, wall.x + wall.width));
     const closestY = Math.max(wall.y, Math.min(y, wall.y + wall.height));
     
@@ -160,7 +208,9 @@ function checkWallCollision(x, y, radius) {
     const distY = y - closestY;
     const distance = Math.sqrt(distX * distX + distY * distY);
     
-    if (distance < radius) return true;
+    if (distance < radius) {
+      return true;
+    }
   }
   return false;
 }
@@ -174,7 +224,7 @@ function randomSpawn() {
   for (let attempts = 0; attempts < 20; attempts++) {
     x = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.w - MAP_BOUNDS.padding * 2) );
     y = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) );
-    if (!checkWallCollision(x, y, PLAYER_RADIUS)) break;
+    if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS)) break;
   }
   return { x, y };
 }
@@ -190,70 +240,81 @@ function clamp(val, a, b) {
 
 // Generate walls on server startup
 generateMazeWalls();
+wallGrid.build(WALLS);
+
+const STALE_PLAYER_TIMEOUT = 30000; // 30 seconds
 
 io.on('connection', (socket) => {
   console.log('connect', socket.id);
 
   socket.on('join', (username) => {
-    const spawn = randomSpawn();
-    const p = {
-      id: socket.id,
-      username: String(username).slice(0, 20) || 'Player',
-      x: spawn.x,
-      y: spawn.y,
-      vx: 0,
-      vy: 0,
-      color: randomColor(),
-      lastProcessedInput: 0,
-      lastHeard: Date.now()
-    };
-    players.set(socket.id, p);
+    try {
+      const spawn = randomSpawn();
+      const p = {
+        id: socket.id,
+        username: String(username).slice(0, 20) || 'Player',
+        x: spawn.x,
+        y: spawn.y,
+        vx: 0,
+        vy: 0,
+        color: randomColor(),
+        lastProcessedInput: 0,
+        lastHeard: Date.now()
+      };
+      players.set(socket.id, p);
 
-    // send initial state
-    socket.emit('currentPlayers', Array.from(players.values()));
-    // announce new player to others
-    socket.broadcast.emit('newPlayer', p);
-    console.log('player joined', p.username, 'spawn', spawn);
+      // send initial state
+      socket.emit('currentPlayers', Array.from(players.values()));
+      // announce new player to others
+      socket.broadcast.emit('newPlayer', p);
+      console.log('player joined', p.username, 'spawn', spawn);
+    } catch (err) {
+      console.error('Error in join event', err);
+    }
   });
 
   // input message: {seq, dt, input: {x, y}}
   socket.on('input', (msg) => {
-    const player = players.get(socket.id);
-    if (!player) return;
+    try {
+      const player = players.get(socket.id);
+      if (!player) return;
 
-    const now = Date.now();
-    player.lastHeard = now;
+      const now = Date.now();
+      player.lastHeard = now;
 
-    const seq = Number(msg.seq) || 0;
-    let dt = Number(msg.dt) || (1 / TICK_RATE);
-    dt = Math.min(dt, MAX_INPUT_DT);
+      const seq = Number(msg.seq) || 0;
+      let dt = Number(msg.dt) || (1 / TICK_RATE);
+      dt = Math.min(dt, MAX_INPUT_DT);
 
-    // Only process monotonic sequence numbers
-    if (seq <= player.lastProcessedInput) return;
-    player.lastProcessedInput = seq;
+      // Only process monotonic sequence numbers
+      if (seq <= player.lastProcessedInput) return;
+      player.lastProcessedInput = seq;
 
-    const input = msg.input || { x: 0, y: 0 };
-    let ix = Number(input.x) || 0;
-    let iy = Number(input.y) || 0;
-    const len = Math.hypot(ix, iy);
-    if (len > 1e-6) { ix /= len; iy /= len; }
+      const input = msg.input || { x: 0, y: 0 };
+      let ix = Number(input.x) || 0;
+      let iy = Number(input.y) || 0;
+      const len = Math.hypot(ix, iy);
+      if (len > 1e-6) { ix /= len; iy /= len; }
 
-    // server-authoritative integration (apply input immediately)
-    player.vx = ix * SPEED;
-    player.vy = iy * SPEED;
-    
-    const newX = player.x + player.vx * dt;
-    const newY = player.y + player.vy * dt;
-    
-    // Check collision with walls
-    if (!checkWallCollision(newX, newY, PLAYER_RADIUS)) {
-      player.x = newX;
-      player.y = newY;
+      // server-authoritative integration (apply input immediately)
+      player.vx = ix * SPEED;
+      player.vy = iy * SPEED;
+      
+      const newX = player.x + player.vx * dt;
+      const newY = player.y + player.vy * dt;
+      
+      // Check collision with walls using spatial grid
+      if (!checkWallCollisionOptimized(newX, newY, PLAYER_RADIUS)) {
+        player.x = newX;
+        player.y = newY;
+      }
+
+      // clamp to map bounds
+      player.x = clamp(player.x, MAP_BOUNDS.padding, MAP_BOUNDS.w - MAP_BOUNDS.padding);
+      player.y = clamp(player.y, MAP_BOUNDS.padding, MAP_BOUNDS.h - MAP_BOUNDS.padding);
+    } catch (err) {
+      console.error('Error processing input', err);
     }
-
-    // clamp to map bounds
-    player.x = clamp(player.x, MAP_BOUNDS.padding, MAP_BOUNDS.w - MAP_BOUNDS.padding);
-    player.y = clamp(player.y, MAP_BOUNDS.padding, MAP_BOUNDS.h - MAP_BOUNDS.padding);
   });
 
   socket.on('disconnect', () => {
@@ -267,18 +328,39 @@ io.on('connection', (socket) => {
 
 // Broadcast authoritative snapshots at TICK_RATE
 setInterval(() => {
-  const snapshot = Array.from(players.values()).map(p => ({
-    id: p.id,
-    x: p.x,
-    y: p.y,
-    vx: p.vx,
-    vy: p.vy,
-    lastProcessedInput: p.lastProcessedInput,
-    username: p.username,
-    color: p.color
-  }));
-  if (snapshot.length) {
-    io.volatile.emit('stateSnapshot', { now: Date.now(), players: snapshot });
+  try {
+    const now = Date.now();
+    const staleIds = [];
+
+    // Check for stale players and remove them
+    for (const [id, p] of players) {
+      if (now - p.lastHeard > STALE_PLAYER_TIMEOUT) {
+        staleIds.push(id);
+      }
+    }
+
+    staleIds.forEach(id => {
+      players.delete(id);
+      io.emit('playerLeft', id);
+      console.log('Removed stale player', id);
+    });
+
+    const snapshot = Array.from(players.values()).map(p => ({
+      id: p.id,
+      x: p.x,
+      y: p.y,
+      vx: p.vx,
+      vy: p.vy,
+      lastProcessedInput: p.lastProcessedInput,
+      username: p.username,
+      color: p.color
+    }));
+
+    if (snapshot.length) {
+      io.volatile.emit('stateSnapshot', { now: Date.now(), players: snapshot });
+    }
+  } catch (err) {
+    console.error('Error broadcasting snapshot', err);
   }
 }, 1000 / TICK_RATE);
 
