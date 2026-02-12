@@ -219,14 +219,14 @@ const players = new Map(); // socketId -> player
 const PLAYER_RADIUS = 26;
 
 function findTopLeftSpawn() {
-  // Top-left corner spawn area
-  // Looking for a safe spot in the top-left region, avoiding walls
+  // Top-left corner spawn area, but pushed more diagonally down-right
+  // to avoid the walls at the top-left corner
   
   const spawnSearchArea = {
-    minX: MAP_BOUNDS.padding + 100,
-    maxX: MAP_BOUNDS.padding + 600,
-    minY: MAP_BOUNDS.padding + 100,
-    maxY: MAP_BOUNDS.padding + 600
+    minX: 750,
+    maxX: 1200,
+    minY: 750,
+    maxY: 1200
   };
   
   // Grid search for safe position
@@ -250,7 +250,7 @@ function findTopLeftSpawn() {
   }
   
   // Fallback if grid search fails (shouldn't happen with current wall layout)
-  return { x: MAP_BOUNDS.padding + 150, y: MAP_BOUNDS.padding + 150 };
+  return { x: 800, y: 800 };
 }
 
 function randomColor() {
