@@ -29,168 +29,122 @@ const SPEED = 260; // px/sec
 
 // BIG map: 12000 x 12000
 const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
-
-// Wall generation parameters (matching reference game structure)
-const WALL_THICKNESS = 480;
-const SPAWN_MARGIN = 350;
-const CELL_SIZE = MAP_BOUNDS.w / 12;
-const CELL_GAP = Math.max(20, CELL_SIZE * 0.05);
+const MAP_CENTER = { x: 0, y: 0 };
+const MAP_HALF = 6000;
 
 const players = new Map(); // socketId -> player
-let walls = []; // array of wall rectangles { x, y, w, h }
 
-// ============ WALL GENERATION ============
-function generateWalls() {
-  walls = [];
-  
-  // Define maze centerline as grid coordinates (cell indices)
-  const centerlineGrid = [
-    [2,1],[2,3],[4,3],[4,1],[6,1],[6,3],[8,3],[8,1],[10,1],
-    [10,3],[10,5],[8,5],[8,7],[6,7],[6,5],[4,5],[4,7],[2,7],
-    [2,9],[4,9],[4,11],[6,11],[6,9],[8,9],[8,11],[10,11]
-  ];
-  
-  // Convert grid coordinates to world positions
-  const centerline = centerlineGrid.map(([col, row]) => {
-    const x = -MAP_BOUNDS.w / 2 + (col - 0.5) * CELL_SIZE;
-    const y = -MAP_BOUNDS.h / 2 + (row - 0.5) * CELL_SIZE;
-    return { x, y };
-  });
-  
-  // For each cell in the 12x12 grid, determine if it's a wall or path
-  const grid = Array(12).fill(null).map(() => Array(12).fill(true)); // true = wall
-  
-  // Mark centerline cells as paths (false = no wall)
-  for (const [col, row] of centerlineGrid) {
-    grid[row][col] = false;
-  }
-  
-  // Generate thick wall rectangles around walls
-  for (let row = 0; row < 12; row++) {
-    for (let col = 0; col < 12; col++) {
-      if (!grid[row][col]) continue; // skip paths
-      
-      const wx = -MAP_BOUNDS.w / 2 + col * CELL_SIZE;
-      const wy = -MAP_BOUNDS.h / 2 + row * CELL_SIZE;
-      
-      walls.push({
-        x: wx,
-        y: wy,
-        w: CELL_SIZE,
-        h: CELL_SIZE
-      });
-    }
-  }
-  
-  console.log(`Generated ${walls.length} wall cells`);
-}
-
-// ============ COLLISION DETECTION ============
-function pointInRect(px, py, rect) {
-  return px >= rect.x && px <= rect.x + rect.w &&
-         py >= rect.y && py <= rect.y + rect.h;
-}
-
-function resolveCircleRect(entity, rect) {
-  const radius = entity.radius || 15;
-  
-  // Find closest point on rect to circle center
-  const closestX = Math.max(rect.x, Math.min(entity.x, rect.x + rect.w));
-  const closestY = Math.max(rect.y, Math.min(entity.y, rect.y + rect.h));
-  
-  const dx = entity.x - closestX;
-  const dy = entity.y - closestY;
-  const dist = Math.hypot(dx, dy);
-  
-  // No collision
-  if (dist >= radius) return;
-  
-  // Collision detected - push entity out
-  if (dist > 0) {
-    const overlap = radius - dist + 0.5; // small buffer
-    const nx = dx / dist;
-    const ny = dy / dist;
-    
-    entity.x += nx * overlap;
-    entity.y += ny * overlap;
-    
-    // Damp velocity component along collision normal
-    const vn = entity.vx * nx + entity.vy * ny;
-    if (vn > 0) {
-      entity.vx -= vn * nx * 0.8;
-      entity.vy -= vn * ny * 0.8;
-    }
-  } else {
-    // Circle center is inside rect - push out in largest direction
-    const toRectCenterX = (rect.x + rect.w / 2) - entity.x;
-    const toRectCenterY = (rect.y + rect.h / 2) - entity.y;
-    
-    let nx = 1, ny = 0;
-    
-    // Find closest edge
-    const distToLeft = Math.abs(entity.x - rect.x);
-    const distToRight = Math.abs(entity.x - (rect.x + rect.w));
-    const distToTop = Math.abs(entity.y - rect.y);
-    const distToBottom = Math.abs(entity.y - (rect.y + rect.h));
-    
-    const minDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
-    
-    if (minDist === distToLeft) { nx = -1; ny = 0; }
-    else if (minDist === distToRight) { nx = 1; ny = 0; }
-    else if (minDist === distToTop) { nx = 0; ny = -1; }
-    else { nx = 0; ny = 1; }
-    
-    entity.x += nx * (radius + 0.5);
-    entity.y += ny * (radius + 0.5);
-    entity.vx = 0;
-    entity.vy = 0;
-  }
-}
-
-// ============ MAP BOUNDS + WALL COLLISION ============
-function clamp(val, a, b) {
-  return Math.max(a, Math.min(b, val));
-}
-
-function constrainEntity(entity) {
-  const radius = entity.radius || 15;
-  
-  // Clamp to map bounds
-  entity.x = clamp(entity.x, MAP_BOUNDS.padding + radius, MAP_BOUNDS.w - MAP_BOUNDS.padding - radius);
-  entity.y = clamp(entity.y, MAP_BOUNDS.padding + radius, MAP_BOUNDS.h - MAP_BOUNDS.padding - radius);
-  
-  // Resolve wall collisions
-  for (const wall of walls) {
-    resolveCircleRect(entity, wall);
-  }
-}
-
-// ============ NETWORKING ============
 function randomSpawn() {
-  let x, y, valid = false;
-  
-  // Keep trying to spawn in a non-wall location
-  while (!valid) {
-    x = Math.floor(SPAWN_MARGIN + Math.random() * (MAP_BOUNDS.w - SPAWN_MARGIN * 2));
-    y = Math.floor(SPAWN_MARGIN + Math.random() * (MAP_BOUNDS.h - SPAWN_MARGIN * 2));
-    
-    // Check if spawn position is not inside a wall
-    valid = true;
-    for (const wall of walls) {
-      if (pointInRect(x, y, wall)) {
-        valid = false;
-        break;
-      }
-    }
-  }
-  
-  return { x, y };
+  return {
+    x: Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.w - MAP_BOUNDS.padding * 2) ),
+    y: Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) )
+  };
 }
 
 function randomColor() {
   const hue = Math.floor(Math.random() * 360);
   return `hsl(${hue} 75% 50%)`;
 }
+
+function clamp(val, a, b) {
+  return Math.max(a, Math.min(b, val));
+}
+
+// --- Wall Generation (Single Snake Maze) ---
+// Creates a continuous snake-like wall that winds through the map
+function generateSnakeMaze() {
+  const CELL = 1000; // Grid cell size (12 cells across = 12000)
+  const WALL_THICKNESS = 200; // Thickness of wall segments
+  const COLS = 12;
+  const ROWS = 12;
+  
+  const centerX = MAP_CENTER.x;
+  const centerY = MAP_CENTER.y;
+  const halfW = MAP_HALF - MAP_BOUNDS.padding;
+  const halfH = MAP_HALF - MAP_BOUNDS.padding;
+  
+  // Define a snake path through the grid (alternating rows, moving horizontally and vertically)
+  const snakePath = [];
+  
+  // Create a winding path that goes:
+  // Right across row 1, down to row 2, left across row 2, down to row 3, right across row 3, etc.
+  for (let row = 1; row < ROWS; row++) {
+    const isLeftToRight = row % 2 === 1;
+    
+    if (isLeftToRight) {
+      // Go left to right
+      for (let col = 1; col < COLS; col++) {
+        const x1 = centerX + (col - COLS/2) * CELL;
+        const y1 = centerY + (row - ROWS/2) * CELL;
+        const x2 = centerX + ((col + 1) - COLS/2) * CELL;
+        const y2 = centerY + (row - ROWS/2) * CELL;
+        snakePath.push([x1, y1, x2, y2]);
+      }
+    } else {
+      // Go right to left
+      for (let col = COLS - 1; col > 1; col--) {
+        const x1 = centerX + (col - COLS/2) * CELL;
+        const y1 = centerY + (row - ROWS/2) * CELL;
+        const x2 = centerX + ((col - 1) - COLS/2) * CELL;
+        const y2 = centerY + (row - ROWS/2) * CELL;
+        snakePath.push([x1, y1, x2, y2]);
+      }
+    }
+    
+    // Add vertical segment to next row
+    if (row < ROWS - 1) {
+      const col = isLeftToRight ? COLS - 1 : 1;
+      const x = centerX + (col - COLS/2) * CELL;
+      const y1 = centerY + (row - ROWS/2) * CELL;
+      const y2 = centerY + ((row + 1) - ROWS/2) * CELL;
+      snakePath.push([x, y1, x, y2]);
+    }
+  }
+  
+  // Convert line segments to thick rectangles (wall polygons)
+  const walls = [];
+  let wallId = 0;
+  
+  for (const [x1, y1, x2, y2] of snakePath) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    
+    if (len < 1) continue;
+    
+    const nx = -dy / len;
+    const ny = dx / len;
+    
+    const half = WALL_THICKNESS / 2;
+    
+    // Create rectangle corners for this wall segment
+    const x1_offset = x1 + nx * half;
+    const y1_offset = y1 + ny * half;
+    const x2_offset = x2 + nx * half;
+    const y2_offset = y2 + ny * half;
+    const x3_offset = x2 - nx * half;
+    const y3_offset = y2 - ny * half;
+    const x4_offset = x1 - nx * half;
+    const y4_offset = y1 - ny * half;
+    
+    // Clamp all points to map bounds
+    const points = [
+      { x: clamp(x1_offset, centerX - halfW, centerX + halfW), y: clamp(y1_offset, centerY - halfH, centerY + halfH) },
+      { x: clamp(x2_offset, centerX - halfW, centerX + halfW), y: clamp(y2_offset, centerY - halfH, centerY + halfH) },
+      { x: clamp(x3_offset, centerX - halfW, centerX + halfW), y: clamp(y3_offset, centerY - halfH, centerY + halfH) },
+      { x: clamp(x4_offset, centerX - halfW, centerX + halfW), y: clamp(y4_offset, centerY - halfH, centerY + halfH) }
+    ];
+    
+    walls.push({
+      id: `wall_${wallId++}`,
+      points: points
+    });
+  }
+  
+  return walls;
+}
+
+const walls = generateSnakeMaze();
 
 io.on('connection', (socket) => {
   console.log('connect', socket.id);
@@ -204,20 +158,14 @@ io.on('connection', (socket) => {
       y: spawn.y,
       vx: 0,
       vy: 0,
-      vy: 0,
-      radius: 15,
       color: randomColor(),
       lastProcessedInput: 0,
       lastHeard: Date.now()
     };
     players.set(socket.id, p);
 
-    // send initial state (including walls)
-    socket.emit('currentPlayers', {
-      players: Array.from(players.values()),
-      walls: walls,
-      mapBounds: MAP_BOUNDS
-    });
+    // send initial state with walls
+    socket.emit('currentPlayers', Array.from(players.values()), walls);
     // announce new player to others
     socket.broadcast.emit('newPlayer', p);
     console.log('player joined', p.username, 'spawn', spawn);
@@ -251,8 +199,9 @@ io.on('connection', (socket) => {
     player.x += player.vx * dt;
     player.y += player.vy * dt;
 
-    // Apply collision constraints
-    constrainEntity(player);
+    // clamp to map bounds
+    player.x = clamp(player.x, MAP_BOUNDS.padding, MAP_BOUNDS.w - MAP_BOUNDS.padding);
+    player.y = clamp(player.y, MAP_BOUNDS.padding, MAP_BOUNDS.h - MAP_BOUNDS.padding);
   });
 
   socket.on('disconnect', () => {
@@ -272,18 +221,13 @@ setInterval(() => {
     y: p.y,
     vx: p.vx,
     vy: p.vy,
-    radius: p.radius,
     lastProcessedInput: p.lastProcessedInput,
     username: p.username,
     color: p.color
   }));
   if (snapshot.length) {
-    // mark snapshots as volatile so a slow client won't cause queued bursts of old snapshots
-    io.volatile.emit('stateSnapshot', { 
-      now: Date.now(), 
-      players: snapshot,
-      walls: walls
-    });
+    // Include walls in snapshot for new players or updates
+    io.volatile.emit('stateSnapshot', { now: Date.now(), players: snapshot, walls: walls });
   }
 }, 1000 / TICK_RATE);
 
@@ -291,6 +235,3 @@ server.listen(PORT, () => {
   console.log(`Moborr.io server listening on http://localhost:${PORT}`);
   if (process.env.CLIENT_ORIGIN) console.log('CLIENT_ORIGIN =', process.env.CLIENT_ORIGIN);
 });
-
-// Initialize walls on startup
-generateWalls();
