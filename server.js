@@ -3,6 +3,9 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
+// Import petal system
+const { PETALS, RARITY_MULTIPLIERS, createPetal, usePetal } = require('./petals.js');
+
 const app = express();
 const server = http.createServer(app);
 
@@ -229,6 +232,41 @@ function randomSpawn() {
   return { x, y };
 }
 
+function findTopLeftSpawn() {
+  // Top-left corner spawn area, but pushed more diagonally down-right
+  // to avoid the walls at the top-left corner
+  
+  const spawnSearchArea = {
+    minX: 750,
+    maxX: 1200,
+    minY: 750,
+    maxY: 1200
+  };
+  
+  // Grid search for safe position
+  const gridStep = 50; // check every 50px
+  
+  for (let y = spawnSearchArea.minY; y <= spawnSearchArea.maxY; y += gridStep) {
+    for (let x = spawnSearchArea.minX; x <= spawnSearchArea.maxX; x += gridStep) {
+      if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS + 50)) {
+        // Add some randomness within a small radius so players don't stack exactly
+        const offsetX = (Math.random() - 0.5) * 80;
+        const offsetY = (Math.random() - 0.5) * 80;
+        const finalX = x + offsetX;
+        const finalY = y + offsetY;
+        
+        // Final validation
+        if (!checkWallCollisionOptimized(finalX, finalY, PLAYER_RADIUS)) {
+          return { x: finalX, y: finalY };
+        }
+      }
+    }
+  }
+  
+  // Fallback if grid search fails (shouldn't happen with current wall layout)
+  return { x: 800, y: 800 };
+}
+
 function randomColor() {
   const hue = Math.floor(Math.random() * 360);
   return `hsl(${hue} 75% 50%)`;
@@ -236,6 +274,16 @@ function randomColor() {
 
 function clamp(val, a, b) {
   return Math.max(a, Math.min(b, val));
+}
+
+// Initialize starting inventory for a new player
+function createStartingInventory() {
+  return [
+    createPetal('fireball', 'Common'),
+    createPetal('fireball', 'Uncommon'),
+    createPetal('fireball', 'Rare'),
+    createPetal('fireball', 'Legendary')
+  ];
 }
 
 // Generate walls on server startup
@@ -249,7 +297,7 @@ io.on('connection', (socket) => {
 
   socket.on('join', (username) => {
     try {
-      const spawn = randomSpawn();
+      const spawn = findTopLeftSpawn();
       const p = {
         id: socket.id,
         username: String(username).slice(0, 20) || 'Player',
@@ -261,15 +309,32 @@ io.on('connection', (socket) => {
         lastProcessedInput: 0,
         lastHeard: Date.now(),
         // Inventory system
-        inventory: [],
+        inventory: createStartingInventory(),
         hotbar: new Array(8).fill(null)
       };
       players.set(socket.id, p);
 
       // send initial state
-      socket.emit('currentPlayers', Array.from(players.values()));
+      socket.emit('currentPlayers', Array.from(players.values()).map(pl => ({
+        id: pl.id,
+        username: pl.username,
+        x: pl.x,
+        y: pl.y,
+        vx: pl.vx,
+        vy: pl.vy,
+        color: pl.color
+      })));
+      
       // announce new player to others
-      socket.broadcast.emit('newPlayer', p);
+      socket.broadcast.emit('newPlayer', {
+        id: p.id,
+        username: p.username,
+        x: p.x,
+        y: p.y,
+        vx: p.vx,
+        vy: p.vy,
+        color: p.color
+      });
       
       // Send player their inventory
       socket.emit('playerInventory', {
@@ -333,12 +398,23 @@ io.on('connection', (socket) => {
       const player = players.get(socket.id);
       if (!player) return;
 
-      const { inventoryIndex, hotbarSlot } = data;
-      if (inventoryIndex < 0 || inventoryIndex >= player.inventory.length) return;
+      const { petalInstanceId, hotbarSlot } = data;
       if (hotbarSlot < 0 || hotbarSlot >= 8) return;
 
-      player.hotbar[hotbarSlot] = player.inventory[inventoryIndex];
-      console.log(`Player ${player.username} equipped petal to slot ${hotbarSlot}`);
+      // Find petal in inventory by instanceId
+      const petal = player.inventory.find(p => p.instanceId === petalInstanceId);
+      if (!petal) return;
+
+      // Equip to hotbar
+      player.hotbar[hotbarSlot] = petal;
+      
+      // Send updated inventory/hotbar to client
+      socket.emit('playerInventory', {
+        inventory: player.inventory,
+        hotbar: player.hotbar
+      });
+      
+      console.log(`Player ${player.username} equipped ${petal.name} to hotbar slot ${hotbarSlot}`);
     } catch (err) {
       console.error('Error equipping petal', err);
     }
@@ -357,7 +433,7 @@ io.on('connection', (socket) => {
       if (!petal) return;
 
       console.log(`Player ${player.username} used petal: ${petal.name}`);
-      // TODO: Execute petal effects, validate on server, etc.
+      // TODO: Execute petal effects on server, validate, broadcast results to other players
     } catch (err) {
       console.error('Error using petal', err);
     }
