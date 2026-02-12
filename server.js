@@ -51,7 +51,7 @@ const PETALS = {
     id: 'fireball',
     name: 'Fireball',
     category: PETAL_CATEGORIES.DAMAGER,
-    icon: '/assets/petals/fireball.webp',
+    icon: '/assets/petals/fireball.png',
     description: 'A burning projectile that explodes on impact',
     damage: 30,
     health: 35
