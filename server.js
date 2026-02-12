@@ -29,8 +29,6 @@ const SPEED = 260; // px/sec
 
 // BIG map: 12000 x 12000
 const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
-const MAP_CENTER = { x: 0, y: 0 };
-const MAP_HALF = 6000;
 
 const players = new Map(); // socketId -> player
 
@@ -40,111 +38,13 @@ function randomSpawn() {
     y: Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) )
   };
 }
-
 function randomColor() {
   const hue = Math.floor(Math.random() * 360);
   return `hsl(${hue} 75% 50%)`;
 }
-
 function clamp(val, a, b) {
   return Math.max(a, Math.min(b, val));
 }
-
-// --- Wall Generation (Single Snake Maze) ---
-// Creates a continuous snake-like wall that winds through the map
-function generateSnakeMaze() {
-  const CELL = 1000; // Grid cell size (12 cells across = 12000)
-  const WALL_THICKNESS = 200; // Thickness of wall segments
-  const COLS = 12;
-  const ROWS = 12;
-  
-  const centerX = MAP_CENTER.x;
-  const centerY = MAP_CENTER.y;
-  const halfW = MAP_HALF - MAP_BOUNDS.padding;
-  const halfH = MAP_HALF - MAP_BOUNDS.padding;
-  
-  // Define a snake path through the grid (alternating rows, moving horizontally and vertically)
-  const snakePath = [];
-  
-  // Create a winding path that goes:
-  // Right across row 1, down to row 2, left across row 2, down to row 3, right across row 3, etc.
-  for (let row = 1; row < ROWS; row++) {
-    const isLeftToRight = row % 2 === 1;
-    
-    if (isLeftToRight) {
-      // Go left to right
-      for (let col = 1; col < COLS; col++) {
-        const x1 = centerX + (col - COLS/2) * CELL;
-        const y1 = centerY + (row - ROWS/2) * CELL;
-        const x2 = centerX + ((col + 1) - COLS/2) * CELL;
-        const y2 = centerY + (row - ROWS/2) * CELL;
-        snakePath.push([x1, y1, x2, y2]);
-      }
-    } else {
-      // Go right to left
-      for (let col = COLS - 1; col > 1; col--) {
-        const x1 = centerX + (col - COLS/2) * CELL;
-        const y1 = centerY + (row - ROWS/2) * CELL;
-        const x2 = centerX + ((col - 1) - COLS/2) * CELL;
-        const y2 = centerY + (row - ROWS/2) * CELL;
-        snakePath.push([x1, y1, x2, y2]);
-      }
-    }
-    
-    // Add vertical segment to next row
-    if (row < ROWS - 1) {
-      const col = isLeftToRight ? COLS - 1 : 1;
-      const x = centerX + (col - COLS/2) * CELL;
-      const y1 = centerY + (row - ROWS/2) * CELL;
-      const y2 = centerY + ((row + 1) - ROWS/2) * CELL;
-      snakePath.push([x, y1, x, y2]);
-    }
-  }
-  
-  // Convert line segments to thick rectangles (wall polygons)
-  const walls = [];
-  let wallId = 0;
-  
-  for (const [x1, y1, x2, y2] of snakePath) {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.hypot(dx, dy);
-    
-    if (len < 1) continue;
-    
-    const nx = -dy / len;
-    const ny = dx / len;
-    
-    const half = WALL_THICKNESS / 2;
-    
-    // Create rectangle corners for this wall segment
-    const x1_offset = x1 + nx * half;
-    const y1_offset = y1 + ny * half;
-    const x2_offset = x2 + nx * half;
-    const y2_offset = y2 + ny * half;
-    const x3_offset = x2 - nx * half;
-    const y3_offset = y2 - ny * half;
-    const x4_offset = x1 - nx * half;
-    const y4_offset = y1 - ny * half;
-    
-    // Clamp all points to map bounds
-    const points = [
-      { x: clamp(x1_offset, centerX - halfW, centerX + halfW), y: clamp(y1_offset, centerY - halfH, centerY + halfH) },
-      { x: clamp(x2_offset, centerX - halfW, centerX + halfW), y: clamp(y2_offset, centerY - halfH, centerY + halfH) },
-      { x: clamp(x3_offset, centerX - halfW, centerX + halfW), y: clamp(y3_offset, centerY - halfH, centerY + halfH) },
-      { x: clamp(x4_offset, centerX - halfW, centerX + halfW), y: clamp(y4_offset, centerY - halfH, centerY + halfH) }
-    ];
-    
-    walls.push({
-      id: `wall_${wallId++}`,
-      points: points
-    });
-  }
-  
-  return walls;
-}
-
-const walls = generateSnakeMaze();
 
 io.on('connection', (socket) => {
   console.log('connect', socket.id);
@@ -164,8 +64,8 @@ io.on('connection', (socket) => {
     };
     players.set(socket.id, p);
 
-    // send initial state with walls
-    socket.emit('currentPlayers', Array.from(players.values()), walls);
+    // send initial state
+    socket.emit('currentPlayers', Array.from(players.values()));
     // announce new player to others
     socket.broadcast.emit('newPlayer', p);
     console.log('player joined', p.username, 'spawn', spawn);
@@ -226,8 +126,8 @@ setInterval(() => {
     color: p.color
   }));
   if (snapshot.length) {
-    // Include walls in snapshot for new players or updates
-    io.volatile.emit('stateSnapshot', { now: Date.now(), players: snapshot, walls: walls });
+    // mark snapshots as volatile so a slow client won't cause queued bursts of old snapshots
+    io.volatile.emit('stateSnapshot', { now: Date.now(), players: snapshot });
   }
 }, 1000 / TICK_RATE);
 
