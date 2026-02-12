@@ -34,26 +34,65 @@ const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
 const WALLS = [];
 
 function generateMazeWalls() {
-  const wallThickness = 120;
-  const spacing = 300;
+  const wallThickness = 600; // Very thick walls
+  const mapW = MAP_BOUNDS.w;
+  const mapH = MAP_BOUNDS.h;
   
-  for (let x = 0; x < MAP_BOUNDS.w; x += spacing * 2) {
-    WALLS.push({ x, y: MAP_BOUNDS.h * 0.2, width: spacing + 200, height: wallThickness });
-    WALLS.push({ x: x + spacing, y: MAP_BOUNDS.h * 0.5, width: spacing + 200, height: wallThickness });
-    WALLS.push({ x, y: MAP_BOUNDS.h * 0.8, width: spacing + 200, height: wallThickness });
-  }
+  // Main horizontal snake wall - winds up and down
+  WALLS.push({
+    x: 0,
+    y: mapH * 0.7,
+    width: mapW * 0.4,
+    height: wallThickness
+  });
   
-  for (let y = 0; y < MAP_BOUNDS.h; y += spacing * 2) {
-    WALLS.push({ x: MAP_BOUNDS.w * 0.15, y, width: wallThickness, height: spacing + 200 });
-    WALLS.push({ x: MAP_BOUNDS.w * 0.5, y: y + spacing, width: wallThickness, height: spacing + 200 });
-    WALLS.push({ x: MAP_BOUNDS.w * 0.85, y, width: wallThickness, height: spacing + 200 });
-  }
+  // First turn - vertical wall going up
+  WALLS.push({
+    x: mapW * 0.35,
+    y: mapH * 0.15,
+    width: wallThickness,
+    height: mapH * 0.6
+  });
   
-  for (let i = 0; i < 4; i++) {
-    const baseY = i * (MAP_BOUNDS.h / 4) + 400;
-    const baseX = i * (MAP_BOUNDS.w / 4) + 500;
-    WALLS.push({ x: baseX, y: baseY, width: spacing + 150, height: wallThickness });
-  }
+  // Second horizontal segment - goes right
+  WALLS.push({
+    x: mapW * 0.35,
+    y: mapH * 0.15,
+    width: mapW * 0.45,
+    height: wallThickness
+  });
+  
+  // Second turn - vertical wall going down
+  WALLS.push({
+    x: mapW * 0.75,
+    y: mapH * 0.15,
+    width: wallThickness,
+    height: mapH * 0.65
+  });
+  
+  // Third horizontal segment - goes left across the bottom
+  WALLS.push({
+    x: mapW * 0.25,
+    y: mapH * 0.75,
+    width: mapW * 0.6,
+    height: wallThickness
+  });
+  
+  // Additional winding section - creates more complexity
+  WALLS.push({
+    x: mapW * 0.2,
+    y: mapH * 0.35,
+    width: wallThickness,
+    height: mapH * 0.35
+  });
+  
+  // Final winding wall
+  WALLS.push({
+    x: mapW * 0.2,
+    y: mapH * 0.35,
+    width: mapW * 0.35,
+    height: wallThickness
+  });
 }
 
 function checkWallCollision(x, y, radius) {
