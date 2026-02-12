@@ -38,59 +38,115 @@ function generateMazeWalls() {
   const mapW = MAP_BOUNDS.w;
   const mapH = MAP_BOUNDS.h;
   
-  // Main horizontal snake wall - winds up and down
+  // Main perimeter-like wall on the left side, winding up
   WALLS.push({
     x: 0,
-    y: mapH * 0.7,
-    width: mapW * 0.4,
-    height: wallThickness
-  });
-  
-  // First turn - vertical wall going up
-  WALLS.push({
-    x: mapW * 0.35,
-    y: mapH * 0.15,
+    y: 0,
     width: wallThickness,
-    height: mapH * 0.6
+    height: mapH * 0.4
   });
   
-  // Second horizontal segment - goes right
+  // Wall extends right from top-left
   WALLS.push({
-    x: mapW * 0.35,
-    y: mapH * 0.15,
-    width: mapW * 0.45,
+    x: 0,
+    y: 0,
+    width: mapW * 0.35,
     height: wallThickness
   });
   
-  // Second turn - vertical wall going down
+  // First major turn - goes down on the right side of top section
   WALLS.push({
-    x: mapW * 0.75,
-    y: mapH * 0.15,
-    width: wallThickness,
-    height: mapH * 0.65
-  });
-  
-  // Third horizontal segment - goes left across the bottom
-  WALLS.push({
-    x: mapW * 0.25,
-    y: mapH * 0.75,
-    width: mapW * 0.6,
-    height: wallThickness
-  });
-  
-  // Additional winding section - creates more complexity
-  WALLS.push({
-    x: mapW * 0.2,
-    y: mapH * 0.35,
+    x: mapW * 0.3,
+    y: wallThickness,
     width: wallThickness,
     height: mapH * 0.35
   });
   
-  // Final winding wall
+  // Horizontal wall in middle-left area - dead end
+  WALLS.push({
+    x: 0,
+    y: mapH * 0.35,
+    width: mapW * 0.25,
+    height: wallThickness
+  });
+  
+  // Major vertical wall in center - creates main corridor
+  WALLS.push({
+    x: mapW * 0.45,
+    y: mapH * 0.2,
+    width: wallThickness,
+    height: mapH * 0.5
+  });
+  
+  // Winding wall on right side - goes up and down
+  WALLS.push({
+    x: mapW * 0.65,
+    y: 0,
+    width: wallThickness,
+    height: mapH * 0.5
+  });
+  
+  // Right side bottom section - creates a tunnel effect
+  WALLS.push({
+    x: mapW * 0.7,
+    y: mapH * 0.45,
+    width: mapW * 0.3,
+    height: wallThickness
+  });
+  
+  // Bottom perimeter wall - long horizontal
+  WALLS.push({
+    x: 0,
+    y: mapH * 0.8,
+    width: mapW * 0.6,
+    height: wallThickness
+  });
+  
+  // Bottom right area - creates winding path
+  WALLS.push({
+    x: mapW * 0.55,
+    y: mapH * 0.65,
+    width: wallThickness,
+    height: mapH * 0.35
+  });
+  
+  // Center area - creates maze-like dead ends
   WALLS.push({
     x: mapW * 0.2,
-    y: mapH * 0.35,
-    width: mapW * 0.35,
+    y: mapH * 0.5,
+    width: mapW * 0.2,
+    height: wallThickness
+  });
+  
+  // Left-center vertical tunnel
+  WALLS.push({
+    x: mapW * 0.1,
+    y: mapH * 0.5,
+    width: wallThickness,
+    height: mapH * 0.3
+  });
+  
+  // Right-center section - more maze complexity
+  WALLS.push({
+    x: mapW * 0.75,
+    y: mapH * 0.6,
+    width: wallThickness,
+    height: mapH * 0.2
+  });
+  
+  // Additional winding on bottom-left
+  WALLS.push({
+    x: mapW * 0.15,
+    y: mapH * 0.7,
+    width: wallThickness,
+    height: mapH * 0.3
+  });
+  
+  // Top-right corner tunnel
+  WALLS.push({
+    x: mapW * 0.8,
+    y: mapH * 0.15,
+    width: mapW * 0.2,
     height: wallThickness
   });
 }
