@@ -30,21 +30,71 @@ const SPEED = 260; // px/sec
 // BIG map: 12000 x 12000
 const MAP_BOUNDS = { w: 12000, h: 12000, padding: 16 };
 
+// Wall system (must match client)
+const WALLS = [];
+
+function generateMazeWalls() {
+  const wallThickness = 120;
+  const spacing = 300;
+  
+  for (let x = 0; x < MAP_BOUNDS.w; x += spacing * 2) {
+    WALLS.push({ x, y: MAP_BOUNDS.h * 0.2, width: spacing + 200, height: wallThickness });
+    WALLS.push({ x: x + spacing, y: MAP_BOUNDS.h * 0.5, width: spacing + 200, height: wallThickness });
+    WALLS.push({ x, y: MAP_BOUNDS.h * 0.8, width: spacing + 200, height: wallThickness });
+  }
+  
+  for (let y = 0; y < MAP_BOUNDS.h; y += spacing * 2) {
+    WALLS.push({ x: MAP_BOUNDS.w * 0.15, y, width: wallThickness, height: spacing + 200 });
+    WALLS.push({ x: MAP_BOUNDS.w * 0.5, y: y + spacing, width: wallThickness, height: spacing + 200 });
+    WALLS.push({ x: MAP_BOUNDS.w * 0.85, y, width: wallThickness, height: spacing + 200 });
+  }
+  
+  for (let i = 0; i < 4; i++) {
+    const baseY = i * (MAP_BOUNDS.h / 4) + 400;
+    const baseX = i * (MAP_BOUNDS.w / 4) + 500;
+    WALLS.push({ x: baseX, y: baseY, width: spacing + 150, height: wallThickness });
+  }
+}
+
+function checkWallCollision(x, y, radius) {
+  for (const wall of WALLS) {
+    const closestX = Math.max(wall.x, Math.min(x, wall.x + wall.width));
+    const closestY = Math.max(wall.y, Math.min(y, wall.y + wall.height));
+    
+    const distX = x - closestX;
+    const distY = y - closestY;
+    const distance = Math.sqrt(distX * distX + distY * distY);
+    
+    if (distance < radius) return true;
+  }
+  return false;
+}
+
 const players = new Map(); // socketId -> player
+const PLAYER_RADIUS = 26;
 
 function randomSpawn() {
-  return {
-    x: Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.w - MAP_BOUNDS.padding * 2) ),
-    y: Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) )
-  };
+  let x, y;
+  // Keep trying to find a spawn point that doesn't collide with walls
+  for (let attempts = 0; attempts < 20; attempts++) {
+    x = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.w - MAP_BOUNDS.padding * 2) );
+    y = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) );
+    if (!checkWallCollision(x, y, PLAYER_RADIUS)) break;
+  }
+  return { x, y };
 }
+
 function randomColor() {
   const hue = Math.floor(Math.random() * 360);
   return `hsl(${hue} 75% 50%)`;
 }
+
 function clamp(val, a, b) {
   return Math.max(a, Math.min(b, val));
 }
+
+// Generate walls on server startup
+generateMazeWalls();
 
 io.on('connection', (socket) => {
   console.log('connect', socket.id);
@@ -96,8 +146,15 @@ io.on('connection', (socket) => {
     // server-authoritative integration (apply input immediately)
     player.vx = ix * SPEED;
     player.vy = iy * SPEED;
-    player.x += player.vx * dt;
-    player.y += player.vy * dt;
+    
+    const newX = player.x + player.vx * dt;
+    const newY = player.y + player.vy * dt;
+    
+    // Check collision with walls
+    if (!checkWallCollision(newX, newY, PLAYER_RADIUS)) {
+      player.x = newX;
+      player.y = newY;
+    }
 
     // clamp to map bounds
     player.x = clamp(player.x, MAP_BOUNDS.padding, MAP_BOUNDS.w - MAP_BOUNDS.padding);
@@ -126,7 +183,6 @@ setInterval(() => {
     color: p.color
   }));
   if (snapshot.length) {
-    // mark snapshots as volatile so a slow client won't cause queued bursts of old snapshots
     io.volatile.emit('stateSnapshot', { now: Date.now(), players: snapshot });
   }
 }, 1000 / TICK_RATE);
