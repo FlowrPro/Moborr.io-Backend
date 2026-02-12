@@ -218,15 +218,39 @@ function checkWallCollisionOptimized(x, y, radius) {
 const players = new Map(); // socketId -> player
 const PLAYER_RADIUS = 26;
 
-function randomSpawn() {
-  let x, y;
-  // Keep trying to find a spawn point that doesn't collide with walls
-  for (let attempts = 0; attempts < 20; attempts++) {
-    x = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.w - MAP_BOUNDS.padding * 2) );
-    y = Math.floor( MAP_BOUNDS.padding + Math.random() * (MAP_BOUNDS.h - MAP_BOUNDS.padding * 2) );
-    if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS)) break;
+function findTopLeftSpawn() {
+  // Top-left corner spawn area
+  // Looking for a safe spot in the top-left region, avoiding walls
+  
+  const spawnSearchArea = {
+    minX: MAP_BOUNDS.padding + 100,
+    maxX: MAP_BOUNDS.padding + 600,
+    minY: MAP_BOUNDS.padding + 100,
+    maxY: MAP_BOUNDS.padding + 600
+  };
+  
+  // Grid search for safe position
+  const gridStep = 50; // check every 50px
+  
+  for (let y = spawnSearchArea.minY; y <= spawnSearchArea.maxY; y += gridStep) {
+    for (let x = spawnSearchArea.minX; x <= spawnSearchArea.maxX; x += gridStep) {
+      if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS + 50)) {
+        // Add some randomness within a small radius so players don't stack exactly
+        const offsetX = (Math.random() - 0.5) * 80;
+        const offsetY = (Math.random() - 0.5) * 80;
+        const finalX = x + offsetX;
+        const finalY = y + offsetY;
+        
+        // Final validation
+        if (!checkWallCollisionOptimized(finalX, finalY, PLAYER_RADIUS)) {
+          return { x: finalX, y: finalY };
+        }
+      }
+    }
   }
-  return { x, y };
+  
+  // Fallback if grid search fails (shouldn't happen with current wall layout)
+  return { x: MAP_BOUNDS.padding + 150, y: MAP_BOUNDS.padding + 150 };
 }
 
 function randomColor() {
@@ -249,7 +273,7 @@ io.on('connection', (socket) => {
 
   socket.on('join', (username) => {
     try {
-      const spawn = randomSpawn();
+      const spawn = findTopLeftSpawn();
       const p = {
         id: socket.id,
         username: String(username).slice(0, 20) || 'Player',
