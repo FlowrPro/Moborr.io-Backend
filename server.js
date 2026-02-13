@@ -40,13 +40,6 @@ const PETAL_CATEGORIES = {
 
 // ALL PETALS - Add new petals here!
 const PETALS = {
-  // ============ HEAL CATEGORY ============
-  // Add HEAL petals here
-
-  // ============ CONSUMABLE CATEGORY ============
-  // Add CONSUMABLE petals here
-
-  // ============ DAMAGER CATEGORY ============
   fireball: {
     id: 'fireball',
     name: 'Fireball',
@@ -55,31 +48,20 @@ const PETALS = {
     description: 'A burning projectile that explodes on impact',
     damage: 30,
     health: 35
-  },
-  // Add more DAMAGER petals here
-
-  // ============ SHOOTABLE CATEGORY ============
-  // Add SHOOTABLE petals here
-
-  // ============ BUFF CATEGORY ============
-  // Add BUFF petals here
+  }
 };
 
-// Create a petal instance with rarity
 function createPetal(petalId, rarity = 'Common') {
   const petalDef = PETALS[petalId];
   if (!petalDef) {
     console.error('Petal not found:', petalId);
     return null;
   }
-
   if (!RARITY_MULTIPLIERS[rarity]) {
     console.error('Invalid rarity:', rarity);
     return null;
   }
-
   const multiplier = RARITY_MULTIPLIERS[rarity];
-
   const petal = {
     instanceId: Math.random().toString(36).substr(2, 9),
     id: petalId,
@@ -89,7 +71,6 @@ function createPetal(petalId, rarity = 'Common') {
     icon: petalDef.icon,
     description: petalDef.description,
     quantity: 1,
-    
     healing: petalDef.healing ? petalDef.healing * multiplier : undefined,
     damage: petalDef.damage ? petalDef.damage * multiplier : undefined,
     health: petalDef.health ? petalDef.health * multiplier : undefined,
@@ -97,23 +78,18 @@ function createPetal(petalId, rarity = 'Common') {
     defenseMultiplier: petalDef.defenseMultiplier,
     fireRate: petalDef.fireRate,
     duration: petalDef.duration,
-    
     createdAt: Date.now(),
     cooldown: 0
   };
-
   return petal;
 }
 
 function createStartingInventory() {
-  return [
-    createPetal('fireball', 'Common'),
-    createPetal('fireball', 'Uncommon'),
-    createPetal('fireball', 'Rare'),
-    createPetal('fireball', 'Legendary')
-  ];
+  // Single stack of 5 Common fireballs
+  const p = createPetal('fireball', 'Common');
+  if (p) p.quantity = 5;
+  return [p];
 }
-
 // ============ END PETAL SYSTEM ============
 
 // Simulation parameters
@@ -130,131 +106,42 @@ function generateMazeWalls() {
   const mapW = MAP_BOUNDS.w;
   const mapH = MAP_BOUNDS.h;
   
-  WALLS.push({
-    x: 0,
-    y: 0,
-    width: wallThickness,
-    height: mapH * 0.4
-  });
-  
-  WALLS.push({
-    x: 0,
-    y: 0,
-    width: mapW * 0.35,
-    height: wallThickness
-  });
-  
-  WALLS.push({
-    x: mapW * 0.3,
-    y: wallThickness,
-    width: wallThickness,
-    height: mapH * 0.35
-  });
-  
-  WALLS.push({
-    x: 0,
-    y: mapH * 0.35,
-    width: mapW * 0.25,
-    height: wallThickness
-  });
-  
-  WALLS.push({
-    x: mapW * 0.45,
-    y: mapH * 0.2,
-    width: wallThickness,
-    height: mapH * 0.5
-  });
-  
-  WALLS.push({
-    x: mapW * 0.65,
-    y: 0,
-    width: wallThickness,
-    height: mapH * 0.5
-  });
-  
-  WALLS.push({
-    x: mapW * 0.7,
-    y: mapH * 0.45,
-    width: mapW * 0.3,
-    height: wallThickness
-  });
-  
-  WALLS.push({
-    x: 0,
-    y: mapH * 0.8,
-    width: mapW * 0.6,
-    height: wallThickness
-  });
-  
-  WALLS.push({
-    x: mapW * 0.55,
-    y: mapH * 0.65,
-    width: wallThickness,
-    height: mapH * 0.35
-  });
-  
-  WALLS.push({
-    x: mapW * 0.2,
-    y: mapH * 0.5,
-    width: mapW * 0.2,
-    height: wallThickness
-  });
-  
-  WALLS.push({
-    x: mapW * 0.1,
-    y: mapH * 0.5,
-    width: wallThickness,
-    height: mapH * 0.3
-  });
-  
-  WALLS.push({
-    x: mapW * 0.75,
-    y: mapH * 0.6,
-    width: wallThickness,
-    height: mapH * 0.2
-  });
-  
-  WALLS.push({
-    x: mapW * 0.15,
-    y: mapH * 0.7,
-    width: wallThickness,
-    height: mapH * 0.3
-  });
-  
-  WALLS.push({
-    x: mapW * 0.8,
-    y: mapH * 0.15,
-    width: mapW * 0.2,
-    height: wallThickness
-  });
+  WALLS.push({ x: 0, y: 0, width: wallThickness, height: mapH * 0.4 });
+  WALLS.push({ x: 0, y: 0, width: mapW * 0.35, height: wallThickness });
+  WALLS.push({ x: mapW * 0.3, y: wallThickness, width: wallThickness, height: mapH * 0.35 });
+  WALLS.push({ x: 0, y: mapH * 0.35, width: mapW * 0.25, height: wallThickness });
+  WALLS.push({ x: mapW * 0.45, y: mapH * 0.2, width: wallThickness, height: mapH * 0.5 });
+  WALLS.push({ x: mapW * 0.65, y: 0, width: wallThickness, height: mapH * 0.5 });
+  WALLS.push({ x: mapW * 0.7, y: mapH * 0.45, width: mapW * 0.3, height: wallThickness });
+  WALLS.push({ x: 0, y: mapH * 0.8, width: mapW * 0.6, height: wallThickness });
+  WALLS.push({ x: mapW * 0.55, y: mapH * 0.65, width: wallThickness, height: mapH * 0.35 });
+  WALLS.push({ x: mapW * 0.2, y: mapH * 0.5, width: mapW * 0.2, height: wallThickness });
+  WALLS.push({ x: mapW * 0.1, y: mapH * 0.5, width: wallThickness, height: mapH * 0.3 });
+  WALLS.push({ x: mapW * 0.75, y: mapH * 0.6, width: wallThickness, height: mapH * 0.2 });
+  WALLS.push({ x: mapW * 0.15, y: mapH * 0.7, width: wallThickness, height: mapH * 0.3 });
+  WALLS.push({ x: mapW * 0.8, y: mapH * 0.15, width: mapW * 0.2, height: wallThickness });
 }
 
-// Simple spatial grid for collision optimization
+// Spatial grid for collision optimization
 class SpatialGrid {
   constructor(cellSize) {
     this.cellSize = cellSize;
     this.grid = new Map();
   }
-  
   getNearbyWalls(x, y, radius) {
     const nearbyWalls = new Set();
     const searchRadius = Math.ceil(radius / this.cellSize) + 1;
     const cx = Math.floor(x / this.cellSize);
     const cy = Math.floor(y / this.cellSize);
-    
     for (let dx = -searchRadius; dx <= searchRadius; dx++) {
       for (let dy = -searchRadius; dy <= searchRadius; dy++) {
         const key = `${cx + dx},${cy + dy}`;
         const wallsInCell = this.grid.get(key);
-        if (wallsInCell) {
-          wallsInCell.forEach(w => nearbyWalls.add(w));
-        }
+        if (wallsInCell) wallsInCell.forEach(w => nearbyWalls.add(w));
       }
     }
-    
     return Array.from(nearbyWalls);
   }
-  
   build(walls) {
     this.grid.clear();
     for (const wall of walls) {
@@ -262,7 +149,6 @@ class SpatialGrid {
       const minCellY = Math.floor(wall.y / this.cellSize);
       const maxCellX = Math.floor((wall.x + wall.width) / this.cellSize);
       const maxCellY = Math.floor((wall.y + wall.height) / this.cellSize);
-      
       for (let cx = minCellX; cx <= maxCellX; cx++) {
         for (let cy = minCellY; cy <= maxCellY; cy++) {
           const key = `${cx},${cy}`;
@@ -281,14 +167,10 @@ function checkWallCollisionOptimized(x, y, radius) {
   for (const wall of nearbyWalls) {
     const closestX = Math.max(wall.x, Math.min(x, wall.x + wall.width));
     const closestY = Math.max(wall.y, Math.min(y, wall.y + wall.height));
-    
     const distX = x - closestX;
     const distY = y - closestY;
     const distance = Math.sqrt(distX * distX + distY * distY);
-    
-    if (distance < radius) {
-      return true;
-    }
+    if (distance < radius) return true;
   }
   return false;
 }
@@ -297,15 +179,8 @@ const players = new Map();
 const PLAYER_RADIUS = 26;
 
 function findTopLeftSpawn() {
-  const spawnSearchArea = {
-    minX: 750,
-    maxX: 1200,
-    minY: 750,
-    maxY: 1200
-  };
-  
+  const spawnSearchArea = { minX: 750, maxX: 1200, minY: 750, maxY: 1200 };
   const gridStep = 50;
-  
   for (let y = spawnSearchArea.minY; y <= spawnSearchArea.maxY; y += gridStep) {
     for (let x = spawnSearchArea.minX; x <= spawnSearchArea.maxX; x += gridStep) {
       if (!checkWallCollisionOptimized(x, y, PLAYER_RADIUS + 50)) {
@@ -313,14 +188,10 @@ function findTopLeftSpawn() {
         const offsetY = (Math.random() - 0.5) * 80;
         const finalX = x + offsetX;
         const finalY = y + offsetY;
-        
-        if (!checkWallCollisionOptimized(finalX, finalY, PLAYER_RADIUS)) {
-          return { x: finalX, y: finalY };
-        }
+        if (!checkWallCollisionOptimized(finalX, finalY, PLAYER_RADIUS)) return { x: finalX, y: finalY };
       }
     }
   }
-  
   return { x: 800, y: 800 };
 }
 
@@ -429,27 +300,84 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Equip petal: decrement inventory stack or remove, and put one instance into hotbar
   socket.on('equipPetal', (data) => {
     try {
       const player = players.get(socket.id);
       if (!player) return;
-
       const { petalInstanceId, hotbarSlot } = data;
       if (hotbarSlot < 0 || hotbarSlot >= 8) return;
+      if (!petalInstanceId) return;
 
-      const petal = player.inventory.find(p => p.instanceId === petalInstanceId);
-      if (!petal) return;
+      const invIndex = player.inventory.findIndex(p => p.instanceId === petalInstanceId);
+      if (invIndex === -1) {
+        // Not found
+        return;
+      }
+      const invItem = player.inventory[invIndex];
 
-      player.hotbar[hotbarSlot] = petal;
-      
+      // Decrease stack or remove
+      if (invItem.quantity > 1) {
+        invItem.quantity -= 1;
+      } else {
+        player.inventory.splice(invIndex, 1);
+      }
+
+      // If something already in hotbar slot, return it to inventory (merge)
+      const existing = player.hotbar[hotbarSlot];
+      if (existing) {
+        const mergeIdx = player.inventory.findIndex(it => it.id === existing.id && it.rarity === existing.rarity);
+        if (mergeIdx !== -1) {
+          player.inventory[mergeIdx].quantity += existing.quantity;
+        } else {
+          const stackItem = { ...existing, instanceId: Math.random().toString(36).substr(2, 9) };
+          player.inventory.push(stackItem);
+        }
+      }
+
+      // Put a single quantity instance into hotbar
+      const hotbarPetal = { ...invItem, instanceId: Math.random().toString(36).substr(2, 9), quantity: 1 };
+      player.hotbar[hotbarSlot] = hotbarPetal;
+
+      // Send authoritative inventory/hotbar to client
       socket.emit('playerInventory', {
         inventory: player.inventory,
         hotbar: player.hotbar
       });
-      
-      console.log(`Player ${player.username} equipped ${petal.name} to hotbar slot ${hotbarSlot}`);
+
+      console.log(`Player ${player.username} equipped ${hotbarPetal.name} to hotbar slot ${hotbarSlot}`);
     } catch (err) {
       console.error('Error equipping petal', err);
+    }
+  });
+
+  // Unequip petal: move from hotbar back into inventory (merge by id+rarity)
+  socket.on('unequipPetal', (data) => {
+    try {
+      const player = players.get(socket.id);
+      if (!player) return;
+      const { hotbarSlot } = data;
+      if (hotbarSlot < 0 || hotbarSlot >= 8) return;
+
+      const petal = player.hotbar[hotbarSlot];
+      if (!petal) return;
+
+      player.hotbar[hotbarSlot] = null;
+
+      const mergeIdx = player.inventory.findIndex(it => it.id === petal.id && it.rarity === petal.rarity);
+      if (mergeIdx !== -1) {
+        player.inventory[mergeIdx].quantity += petal.quantity;
+      } else {
+        const stackItem = { ...petal, instanceId: Math.random().toString(36).substr(2, 9) };
+        player.inventory.push(stackItem);
+      }
+
+      socket.emit('playerInventory', {
+        inventory: player.inventory,
+        hotbar: player.hotbar
+      });
+    } catch (err) {
+      console.error('Error unequipping petal', err);
     }
   });
 
@@ -485,9 +413,7 @@ setInterval(() => {
     const staleIds = [];
 
     for (const [id, p] of players) {
-      if (now - p.lastHeard > STALE_PLAYER_TIMEOUT) {
-        staleIds.push(id);
-      }
+      if (now - p.lastHeard > STALE_PLAYER_TIMEOUT) staleIds.push(id);
     }
 
     staleIds.forEach(id => {
